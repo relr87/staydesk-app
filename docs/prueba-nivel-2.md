@@ -11,14 +11,15 @@ App: **https://staydesk-app.vercel.app** (StayDesk 25.8) · Base: Supabase `stay
    returning code;
    ```
 2. **Laptop.** Abre la app, entra como gerente y activa *Modo de trabajo → Solo operaciones*. Abre
-   **Sincronización** y llena:
+   **Servidor del hotel** y llena:
    - Dirección: `https://jamailgolmlcyblzduqe.supabase.co`
-   - Clave pública: `sb_publishable_jUpCz5dHJuF5DdscvZpbgA_y0N_rp7m`. Es pública: con ella no se puede leer
+   - Clave pública (anon): `sb_publishable_jUpCz5dHJuF5DdscvZpbgA_y0N_rp7m`. Es pública: con ella no se puede leer
      ninguna tabla, solo llamar a las funciones de la app.
    - Código: el del paso 1.
 
    Al conectar, la app descarga las 173 habitaciones, los 21 tickets y las 40 llegadas del servidor.
-3. **Teléfono.** En la laptop, en Sincronización, crea un **enlace de invitación** y ábrelo en el teléfono (o escanea su QR).
+3. **Teléfono.** En la laptop, en **Servidor del hotel → Generar código para otro equipo**, comparte el enlace de invitación
+   y ábrelo en el teléfono (o escanea su QR).
 
 ## 1. Crear en el teléfono y verlo en la laptop
 

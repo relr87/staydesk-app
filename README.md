@@ -126,7 +126,7 @@ En **Habitaciones**: buscador por número, filtros por estado («Vacantes limpia
 2. En el editor SQL: inserta un código de conexión para el hotel de ejemplo
    (`insert into sd_codes(code, hotel_id, expires_at) values (sd_newcode(), '5d5d0000-0000-4000-8000-000000000001', now() + interval '1 day') returning code;`).
 3. Publica `deploy/` en Vercel (Framework: *Other*, sin comando de build, *Root Directory* = `deploy`).
-4. En la app: entra con un usuario, abre **Sincronización**, pega la dirección del proyecto, la clave pública y el código.
+4. En la app: entra con un usuario, abre **Servidor del hotel**, pega la dirección del proyecto, la clave pública y el código.
    Desde ese equipo puedes crear el enlace de invitación para los demás.
 
 ## Límites honestos
