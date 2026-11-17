@@ -1,0 +1,2 @@
+StayDesk 25.8
+CSP: 4 scripts y 1 estilos con huella SHA-256

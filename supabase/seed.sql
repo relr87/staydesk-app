@@ -1,124 +1,259 @@
--- StayDesk Demo Inn · datos de ejemplo INVENTADOS (ningún huésped ni empleado real)
--- 7 tipos · 173 habitaciones · 20 personas · ~60 tareas · 25 reparaciones
--- Se puede correr varias veces: borra y vuelve a llenar.
+-- StayDesk · datos de ejemplo INVENTADOS (ningún huésped real). Generado por scripts/gen_seed.py.
+-- 173 habitaciones · 21 tickets de mantenimiento · 40 llegadas = 234 registros.
+-- Se puede volver a correr: borra y vuelve a llenar el hotel de ejemplo. Cada ficha pasa por las mismas reglas
+-- de validación que los cambios de la app (trigger sd_project), así que si un dato no cumple, el script falla.
 
 begin;
 
-truncate maintenance_requests, housekeeping_tasks, rooms, staff, room_types restart identity cascade;
+insert into public.sd_hotels (id, name) values ('5d5d0000-0000-4000-8000-000000000001', 'StayDesk Demo Inn · Orlando Int''l Dr.')
+on conflict (id) do update set name = excluded.name;
 
-insert into room_types (code, name, accessible) values
-  ('KING',  'King estándar',           false),
-  ('DBLQ',  'Doble queen',             false),
-  ('KADA',  'King accesible',          true),
-  ('DQADA', 'Doble queen accesible',   true),
-  ('KSTE',  'Suite king',              false),
-  ('STUD',  'Estudio con cocineta',    false),
-  ('PENT',  'Penthouse',               false);
+delete from public.arrivals            where hotel_id = '5d5d0000-0000-4000-8000-000000000001';
+delete from public.maintenance_tickets where hotel_id = '5d5d0000-0000-4000-8000-000000000001';
+delete from public.rooms               where hotel_id = '5d5d0000-0000-4000-8000-000000000001';
+delete from public.room_types          where hotel_id = '5d5d0000-0000-4000-8000-000000000001';
+delete from public.sd_entities         where hotel_id = '5d5d0000-0000-4000-8000-000000000001';
 
--- 173 habitaciones: pisos 1-5 con 25, pisos 6-7 con 24
-insert into rooms (number, floor, type_code, status, occupied)
-select
-  (f * 100 + n)::text,
-  f,
-  case
-    when f = 7 and n <= 4           then 'PENT'
-    when n in (1, 2)                then case when n = 1 then 'KADA' else 'DQADA' end
-    when n % 10 = 0                 then 'KSTE'
-    when n % 7 = 0                  then 'STUD'
-    when n % 2 = 0                  then 'DBLQ'
-    else 'KING'
-  end,
-  (array['dirty','cleaning','inspected','ready','ready','ready'])[1 + ((f * 7 + n * 3) % 6)]::room_status,
-  ((f + n) % 3) <> 0
-from generate_series(1, 7) f
-cross join lateral generate_series(1, case when f <= 5 then 25 else 24 end) n;
-
-insert into staff (full_name, role, active) values
-  ('Marisol Quintero',  'manager',     true),
-  ('Teodoro Vallejo',   'manager',     true),
-  ('Lucía Arredondo',   'front_desk',  true),
-  ('Bruno Castañeda',   'front_desk',  true),
-  ('Inés Robledo',      'front_desk',  true),
-  ('Rosa Elvira Peña',  'housekeeper', true),
-  ('Daniela Ocampo',    'housekeeper', true),
-  ('Yesenia Barragán',  'housekeeper', true),
-  ('Gloria Montalvo',   'housekeeper', true),
-  ('Paola Rentería',    'housekeeper', true),
-  ('Carmen Solís Ruiz', 'housekeeper', true),
-  ('Adela Fuentevilla', 'housekeeper', true),
-  ('Noemí Carrasco',    'housekeeper', true),
-  ('Fabiola Esquivel',  'housekeeper', false),
-  ('Hernán Lozoya',     'engineer',    true),
-  ('Ramiro Betancourt', 'engineer',    true),
-  ('Óscar Villaseñor',  'engineer',    true),
-  ('Julián Mendívil',   'engineer',    false),
-  ('Sofía Larrañaga',   'front_desk',  true),
-  ('Ernesto Galván',    'manager',     true);
-
--- 60 tareas de limpieza en los últimos 3 días y hoy
-with hk as (
-  select id, row_number() over (order by full_name) rn
-  from staff where role = 'housekeeper' and active
-), mgr as (
-  select id from staff where role = 'manager' order by full_name limit 1
-), pick as (
-  select r.id room_id, row_number() over (order by r.number) i
-  from rooms r
-  where r.number::int % 3 = 0
-  limit 60
-)
-insert into housekeeping_tasks (room_id, assigned_to, inspected_by, type, status, due_date, started_at, finished_at, notes)
-select
-  p.room_id,
-  (select id from hk where rn = 1 + (p.i % 8)),
-  case when st = 'inspected' then (select id from mgr) end,
-  (array['checkout','stayover','stayover','deep_clean'])[1 + (p.i % 4)]::task_type,
-  st,
-  current_date - d,
-  case when st <> 'pending' then (current_date - d) + time '09:00' + (p.i % 60) * interval '1 minute' end,
-  case when st in ('done','inspected') then (current_date - d) + time '10:00' + (p.i % 50) * interval '1 minute' end,
-  case when p.i % 9 = 0 then 'Huésped pidió toallas extra' when p.i % 13 = 0 then 'Revisar mancha en alfombra' end
-from pick p
-cross join lateral (select (p.i % 4)::int as d) dd
-cross join lateral (
-  select case
-    when d > 0 then (array['done','inspected','inspected'])[1 + (p.i % 3)]
-    else (array['pending','pending','in_progress','done','inspected'])[1 + (p.i % 5)]
-  end::task_status as st
-) s;
-
--- 25 reparaciones
-with eng as (
-  select id, row_number() over (order by full_name) rn from staff where role = 'engineer' and active
-), rep as (
-  select id, row_number() over (order by full_name) rn from staff where role in ('front_desk','housekeeper') and active
-), pick as (
-  select r.id room_id, row_number() over (order by r.number) i
-  from rooms r where r.number::int % 7 = 1
-  limit 25
-)
-insert into maintenance_requests (room_id, reported_by, assigned_to, category, priority, status, out_of_order, description, opened_at, closed_at)
-select
-  p.room_id,
-  (select id from rep where rn = 1 + (p.i % 10)),
-  case when st <> 'open' then (select id from eng where rn = 1 + (p.i % 3)) end,
-  (array['ac','plumbing','electrical','lock','tv_wifi','other'])[1 + (p.i % 6)]::req_category,
-  (array['low','normal','normal','urgent'])[1 + (p.i % 4)]::req_priority,
-  st,
-  p.i % 5 = 0,
-  (array[
-    'El aire acondicionado no enfría',
-    'Fuga en el lavabo del baño',
-    'Contacto junto al buró sin corriente',
-    'La chapa electrónica no lee la tarjeta',
-    'El televisor no se conecta al wifi',
-    'Cortina rota en la ventana principal'
-  ])[1 + (p.i % 6)],
-  now() - (p.i % 6) * interval '1 day' - interval '3 hours',
-  case when st = 'closed' then now() - (p.i % 6) * interval '1 day' - interval '1 hour' end
-from pick p
-cross join lateral (
-  select (array['open','in_progress','closed','closed'])[1 + (p.i % 4)]::req_status as st
-) s;
+insert into public.sd_entities (hotel_id, key, version, data, deleted, seq, staff)
+select '5d5d0000-0000-4000-8000-000000000001', v.key, 1, v.data, false, nextval('public.sd_seq'), 'seed'
+from (values
+  ('rm:110', '{"id":110,"f":1,"type":"KXTD","status":"ocupada","guest":"Ana Alarcón","prio":false,"dep":false}'::jsonb),
+  ('rm:111', '{"id":111,"f":1,"type":"KXTY","status":"sucia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:112', '{"id":112,"f":1,"type":"KXTD","status":"inspeccion","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:113', '{"id":113,"f":1,"type":"KXTY","status":"mant","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:114', '{"id":114,"f":1,"type":"KXTD","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:115', '{"id":115,"f":1,"type":"KXTY","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:119', '{"id":119,"f":1,"type":"NKRQE","status":"sucia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:121', '{"id":121,"f":1,"type":"KXTY","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:123', '{"id":123,"f":1,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:125', '{"id":125,"f":1,"type":"SXBL","status":"ocupada","guest":"Diego Zamora","prio":false,"dep":false}'::jsonb),
+  ('rm:127', '{"id":127,"f":1,"type":"SXBL","status":"sucia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:129', '{"id":129,"f":1,"type":"NDRQE","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:200', '{"id":200,"f":2,"type":"SXBL","status":"ocupada","guest":"Zoe Cárdenas","prio":false,"dep":false}'::jsonb),
+  ('rm:202', '{"id":202,"f":2,"type":"SXBL","status":"sucia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:203', '{"id":203,"f":2,"type":"SXBL","status":"mant","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:204', '{"id":204,"f":2,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:205', '{"id":205,"f":2,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:206', '{"id":206,"f":2,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:207', '{"id":207,"f":2,"type":"SXBL","status":"ocupada","guest":"Gabriela Rosales","prio":false,"dep":false}'::jsonb),
+  ('rm:208', '{"id":208,"f":2,"type":"SXBL","status":"ocupada","guest":"Nicolás Benítez","prio":false,"dep":false}'::jsonb),
+  ('rm:209', '{"id":209,"f":2,"type":"SXBL","status":"sucia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:210', '{"id":210,"f":2,"type":"SXBL","status":"inspeccion","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:211', '{"id":211,"f":2,"type":"SXBL","status":"mant","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:212', '{"id":212,"f":2,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:213', '{"id":213,"f":2,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:214', '{"id":214,"f":2,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:215', '{"id":215,"f":2,"type":"SXBL","status":"ocupada","guest":"Camila Alarcón","prio":false,"dep":false}'::jsonb),
+  ('rm:216', '{"id":216,"f":2,"type":"SXBL","status":"ocupada","guest":"Jorge Medina","prio":false,"dep":true}'::jsonb),
+  ('rm:217', '{"id":217,"f":2,"type":"SXBL","status":"sucia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:218', '{"id":218,"f":2,"type":"SXBL","status":"inspeccion","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:219', '{"id":219,"f":2,"type":"NDRQD","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:220', '{"id":220,"f":2,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:221', '{"id":221,"f":2,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:222', '{"id":222,"f":2,"type":"SXBL","status":"ocupada","guest":"Walter Fletcher","prio":false,"dep":false}'::jsonb),
+  ('rm:223', '{"id":223,"f":2,"type":"SXBL","status":"ocupada","guest":"Ethan Lozano","prio":false,"dep":false}'::jsonb),
+  ('rm:224', '{"id":224,"f":2,"type":"SXBL","status":"sucia","guest":"","prio":true,"dep":false}'::jsonb),
+  ('rm:225', '{"id":225,"f":2,"type":"SXBL","status":"sucia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:227', '{"id":227,"f":2,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:229', '{"id":229,"f":2,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:300', '{"id":300,"f":3,"type":"KXTD","status":"sucia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:302', '{"id":302,"f":3,"type":"KXTD","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:303', '{"id":303,"f":3,"type":"KXTY","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:304', '{"id":304,"f":3,"type":"KXTD","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:305', '{"id":305,"f":3,"type":"KXTY","status":"ocupada","guest":"Bruno Figueroa","prio":false,"dep":false}'::jsonb),
+  ('rm:306', '{"id":306,"f":3,"type":"KXTD","status":"ocupada","guest":"Irene Rosales","prio":false,"dep":false}'::jsonb),
+  ('rm:307', '{"id":307,"f":3,"type":"KXTY","status":"sucia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:308', '{"id":308,"f":3,"type":"KXTD","status":"inspeccion","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:309', '{"id":309,"f":3,"type":"KXTY","status":"mant","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:310', '{"id":310,"f":3,"type":"KXTD","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:311', '{"id":311,"f":3,"type":"KXTY","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:312', '{"id":312,"f":3,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:313', '{"id":313,"f":3,"type":"KXTY","status":"ocupada","guest":"Chloe Quiroga","prio":false,"dep":false}'::jsonb),
+  ('rm:314', '{"id":314,"f":3,"type":"KXTD","status":"ocupada","guest":"Elena Alarcón","prio":false,"dep":true}'::jsonb),
+  ('rm:315', '{"id":315,"f":3,"type":"KXTY","status":"sucia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:316', '{"id":316,"f":3,"type":"KXTD","status":"inspeccion","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:317', '{"id":317,"f":3,"type":"KXTD","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:318', '{"id":318,"f":3,"type":"KXTY","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:319', '{"id":319,"f":3,"type":"NKRQD","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:320', '{"id":320,"f":3,"type":"KXTD","status":"ocupada","guest":"Raquel Paredes","prio":false,"dep":false}'::jsonb),
+  ('rm:321', '{"id":321,"f":3,"type":"SXBL","status":"ocupada","guest":"Yago Fletcher","prio":false,"dep":false}'::jsonb),
+  ('rm:322', '{"id":322,"f":3,"type":"KXTD","status":"sucia","guest":"","prio":true,"dep":false}'::jsonb),
+  ('rm:323', '{"id":323,"f":3,"type":"KXTY","status":"sucia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:324', '{"id":324,"f":3,"type":"KXTD","status":"mant","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:325', '{"id":325,"f":3,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:327', '{"id":327,"f":3,"type":"KXTY","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:329', '{"id":329,"f":3,"type":"SXBL","status":"ocupada","guest":"Felipe Ochoa","prio":false,"dep":false}'::jsonb),
+  ('rm:400', '{"id":400,"f":4,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:402', '{"id":402,"f":4,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:403', '{"id":403,"f":4,"type":"SXBL","status":"ocupada","guest":"Henry Valdez","prio":false,"dep":false}'::jsonb),
+  ('rm:404', '{"id":404,"f":4,"type":"SXBL","status":"ocupada","guest":"Diego Figueroa","prio":false,"dep":false}'::jsonb),
+  ('rm:405', '{"id":405,"f":4,"type":"SXBL","status":"sucia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:406', '{"id":406,"f":4,"type":"SXBL","status":"inspeccion","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:407', '{"id":407,"f":4,"type":"SXBL","status":"mant","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:408', '{"id":408,"f":4,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:409', '{"id":409,"f":4,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:410', '{"id":410,"f":4,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:411', '{"id":411,"f":4,"type":"SXBL","status":"ocupada","guest":"Ximena Espinoza","prio":false,"dep":false}'::jsonb),
+  ('rm:412', '{"id":412,"f":4,"type":"SXBL","status":"ocupada","guest":"Mia Quiroga","prio":false,"dep":true}'::jsonb),
+  ('rm:413', '{"id":413,"f":4,"type":"SXBL","status":"sucia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:414', '{"id":414,"f":4,"type":"SXBL","status":"inspeccion","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:415', '{"id":415,"f":4,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:416', '{"id":416,"f":4,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:417', '{"id":417,"f":4,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:418', '{"id":418,"f":4,"type":"SXBL","status":"ocupada","guest":"Leonardo Duarte","prio":false,"dep":false}'::jsonb),
+  ('rm:419', '{"id":419,"f":4,"type":"NDRQD","status":"ocupada","guest":"Teresa Paredes","prio":false,"dep":false}'::jsonb),
+  ('rm:420', '{"id":420,"f":4,"type":"SXBL","status":"sucia","guest":"","prio":true,"dep":false}'::jsonb),
+  ('rm:421', '{"id":421,"f":4,"type":"SXBL","status":"sucia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:422', '{"id":422,"f":4,"type":"KXTD","status":"mant","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:423', '{"id":423,"f":4,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:424', '{"id":424,"f":4,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:425', '{"id":425,"f":4,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:427', '{"id":427,"f":4,"type":"SXBL","status":"ocupada","guest":"Héctor Ochoa","prio":false,"dep":false}'::jsonb),
+  ('rm:429', '{"id":429,"f":4,"type":"SXBL","status":"inspeccion","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:500', '{"id":500,"f":5,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:502', '{"id":502,"f":5,"type":"SXBL","status":"ocupada","guest":"Ethan Valdez","prio":false,"dep":false}'::jsonb),
+  ('rm:503', '{"id":503,"f":5,"type":"KXTY","status":"sucia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:504', '{"id":504,"f":5,"type":"KXTY","status":"inspeccion","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:505', '{"id":505,"f":5,"type":"KXTY","status":"mant","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:506', '{"id":506,"f":5,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:507', '{"id":507,"f":5,"type":"KXTY","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:508', '{"id":508,"f":5,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:509', '{"id":509,"f":5,"type":"KXTY","status":"ocupada","guest":"Samuel Urrutia","prio":false,"dep":false}'::jsonb),
+  ('rm:510', '{"id":510,"f":5,"type":"KXTY","status":"ocupada","guest":"Zoe Espinoza","prio":false,"dep":true}'::jsonb),
+  ('rm:511', '{"id":511,"f":5,"type":"KXTY","status":"sucia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:512', '{"id":512,"f":5,"type":"SXBL","status":"inspeccion","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:513', '{"id":513,"f":5,"type":"KXTY","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:514', '{"id":514,"f":5,"type":"KXTD","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:515', '{"id":515,"f":5,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:516', '{"id":516,"f":5,"type":"SXBL","status":"ocupada","guest":"Gabriela Tovar","prio":false,"dep":false}'::jsonb),
+  ('rm:517', '{"id":517,"f":5,"type":"SXBL","status":"ocupada","guest":"Nicolás Duarte","prio":false,"dep":false}'::jsonb),
+  ('rm:518', '{"id":518,"f":5,"type":"SXBL","status":"sucia","guest":"","prio":true,"dep":false}'::jsonb),
+  ('rm:519', '{"id":519,"f":5,"type":"NKRQD","status":"sucia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:520', '{"id":520,"f":5,"type":"SXBL","status":"mant","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:521', '{"id":521,"f":5,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:522', '{"id":522,"f":5,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:523', '{"id":523,"f":5,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:524', '{"id":524,"f":5,"type":"SXBL","status":"ocupada","guest":"Camila Cárdenas","prio":false,"dep":false}'::jsonb),
+  ('rm:525', '{"id":525,"f":5,"type":"KXTY","status":"ocupada","guest":"Jorge Ochoa","prio":false,"dep":false}'::jsonb),
+  ('rm:527', '{"id":527,"f":5,"type":"SXBL","status":"inspeccion","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:529', '{"id":529,"f":5,"type":"KXTY","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:600', '{"id":600,"f":6,"type":"SXBL","status":"ocupada","guest":"Ana Valdez","prio":false,"dep":false}'::jsonb),
+  ('rm:602', '{"id":602,"f":6,"type":"SXBL","status":"inspeccion","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:603', '{"id":603,"f":6,"type":"SXBL","status":"mant","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:604', '{"id":604,"f":6,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:605', '{"id":605,"f":6,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:606', '{"id":606,"f":6,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:607', '{"id":607,"f":6,"type":"SXBL","status":"ocupada","guest":"Mariana Ibarra","prio":false,"dep":false}'::jsonb),
+  ('rm:608', '{"id":608,"f":6,"type":"SXBL","status":"ocupada","guest":"Ulises Urrutia","prio":false,"dep":true}'::jsonb),
+  ('rm:609', '{"id":609,"f":6,"type":"SXBL","status":"sucia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:610', '{"id":610,"f":6,"type":"SXBL","status":"inspeccion","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:611', '{"id":611,"f":6,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:612', '{"id":612,"f":6,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:613', '{"id":613,"f":6,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:614', '{"id":614,"f":6,"type":"SXBL","status":"ocupada","guest":"Bruno Herrera","prio":false,"dep":false}'::jsonb),
+  ('rm:615', '{"id":615,"f":6,"type":"SXBL","status":"ocupada","guest":"Irene Tovar","prio":false,"dep":false}'::jsonb),
+  ('rm:616', '{"id":616,"f":6,"type":"SXBL","status":"sucia","guest":"","prio":true,"dep":false}'::jsonb),
+  ('rm:617', '{"id":617,"f":6,"type":"SXBL","status":"sucia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:618', '{"id":618,"f":6,"type":"SXBL","status":"mant","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:619', '{"id":619,"f":6,"type":"NDRQD","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:620', '{"id":620,"f":6,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:621', '{"id":621,"f":6,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:622', '{"id":622,"f":6,"type":"SXBL","status":"ocupada","guest":"Chloe Salazar","prio":false,"dep":false}'::jsonb),
+  ('rm:623', '{"id":623,"f":6,"type":"SXBL","status":"ocupada","guest":"Elena Cárdenas","prio":false,"dep":false}'::jsonb),
+  ('rm:624', '{"id":624,"f":6,"type":"SXBL","status":"sucia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:625', '{"id":625,"f":6,"type":"SXBL","status":"inspeccion","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:627', '{"id":627,"f":6,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:629', '{"id":629,"f":6,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:700', '{"id":700,"f":7,"type":"SXBL","status":"inspeccion","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:702', '{"id":702,"f":7,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:703', '{"id":703,"f":7,"type":"KXTY","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:704', '{"id":704,"f":7,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:705', '{"id":705,"f":7,"type":"KXTY","status":"ocupada","guest":"Héctor Caldwell","prio":false,"dep":false}'::jsonb),
+  ('rm:706', '{"id":706,"f":7,"type":"SXBL","status":"ocupada","guest":"Olivia Ibarra","prio":false,"dep":true}'::jsonb),
+  ('rm:707', '{"id":707,"f":7,"type":"KXTY","status":"sucia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:708', '{"id":708,"f":7,"type":"SXBL","status":"inspeccion","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:709', '{"id":709,"f":7,"type":"KXTY","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:710', '{"id":710,"f":7,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:711', '{"id":711,"f":7,"type":"KXTY","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:712', '{"id":712,"f":7,"type":"KXTD","status":"ocupada","guest":"Henry Brennan","prio":false,"dep":false}'::jsonb),
+  ('rm:713', '{"id":713,"f":7,"type":"KXTY","status":"ocupada","guest":"Diego Herrera","prio":false,"dep":false}'::jsonb),
+  ('rm:715', '{"id":715,"f":7,"type":"KXTY","status":"sucia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:716', '{"id":716,"f":7,"type":"SXBL","status":"mant","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:717', '{"id":717,"f":7,"type":"KXTY","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:718', '{"id":718,"f":7,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:719', '{"id":719,"f":7,"type":"NKRQD","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:720', '{"id":720,"f":7,"type":"SXBL","status":"ocupada","guest":"Pablo Zamora","prio":false,"dep":false}'::jsonb),
+  ('rm:721', '{"id":721,"f":7,"type":"SXBL","status":"ocupada","guest":"Ximena Galindo","prio":false,"dep":false}'::jsonb),
+  ('rm:722', '{"id":722,"f":7,"type":"SXBL","status":"sucia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:723', '{"id":723,"f":7,"type":"KXTD","status":"inspeccion","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:724', '{"id":724,"f":7,"type":"SXBL","status":"mant","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:725', '{"id":725,"f":7,"type":"SXBL","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:727', '{"id":727,"f":7,"type":"KXTD","status":"limpia","guest":"","prio":false,"dep":false}'::jsonb),
+  ('rm:729', '{"id":729,"f":7,"type":"SXBL","status":"ocupada","guest":"Elena Valdez","prio":false,"dep":true}'::jsonb),
+  ('tk:1', '{"id":1,"room":113,"issue":"Aire acondicionado","oos":true,"state":"curso","det":"El equipo no enfría; el técnico revisa el compresor.","due":600}'::jsonb),
+  ('tk:2', '{"id":2,"room":203,"issue":"Plomería / fuga","oos":true,"state":"abierto","det":"Fuga bajo el lavabo del baño.","due":647}'::jsonb),
+  ('tk:3', '{"id":3,"room":211,"issue":"Cerradura / llave","oos":true,"state":"abierto","det":"La cerradura no lee la llave digital.","due":694}'::jsonb),
+  ('tk:4', '{"id":4,"room":309,"issue":"TV / WiFi","oos":true,"state":"curso","det":"Sin señal en la TV ni en el WiFi.","due":741}'::jsonb),
+  ('tk:5', '{"id":5,"room":324,"issue":"Luz / eléctrico","oos":true,"state":"abierto","det":"Falla en el circuito de luz del baño.","due":788}'::jsonb),
+  ('tk:6', '{"id":6,"room":407,"issue":"Aire acondicionado","oos":true,"state":"abierto","det":"El equipo no enfría; el técnico revisa el compresor.","due":835}'::jsonb),
+  ('tk:7', '{"id":7,"room":422,"issue":"Plomería / fuga","oos":true,"state":"curso","det":"Fuga bajo el lavabo del baño.","due":882}'::jsonb),
+  ('tk:8', '{"id":8,"room":505,"issue":"Cerradura / llave","oos":true,"state":"abierto","det":"La cerradura no lee la llave digital.","due":929}'::jsonb),
+  ('tk:9', '{"id":9,"room":520,"issue":"TV / WiFi","oos":true,"state":"abierto","det":"Sin señal en la TV ni en el WiFi.","due":976}'::jsonb),
+  ('tk:10', '{"id":10,"room":603,"issue":"Luz / eléctrico","oos":true,"state":"curso","det":"Falla en el circuito de luz del baño.","due":1023}'::jsonb),
+  ('tk:11', '{"id":11,"room":618,"issue":"Aire acondicionado","oos":true,"state":"abierto","det":"El equipo no enfría; el técnico revisa el compresor.","due":1070}'::jsonb),
+  ('tk:12', '{"id":12,"room":716,"issue":"Plomería / fuga","oos":true,"state":"abierto","det":"Fuga bajo el lavabo del baño.","due":1117}'::jsonb),
+  ('tk:13', '{"id":13,"room":724,"issue":"Cerradura / llave","oos":true,"state":"curso","det":"La cerradura no lee la llave digital.","due":1164}'::jsonb),
+  ('tk:14', '{"id":14,"room":110,"issue":"Luz / eléctrico","oos":false,"state":"resuelto","det":"Falla en el circuito de luz del baño.","due":1103}'::jsonb),
+  ('tk:15', '{"id":15,"room":216,"issue":"Otro","oos":false,"state":"abierto","det":"Cortina del baño rota.","due":1134}'::jsonb),
+  ('tk:16', '{"id":16,"room":314,"issue":"Aire acondicionado","oos":false,"state":"resuelto","det":"El equipo no enfría; el técnico revisa el compresor.","due":1165}'::jsonb),
+  ('tk:17', '{"id":17,"room":411,"issue":"Plomería / fuga","oos":false,"state":"abierto","det":"Fuga bajo el lavabo del baño.","due":1196}'::jsonb),
+  ('tk:18', '{"id":18,"room":509,"issue":"Cerradura / llave","oos":false,"state":"resuelto","det":"La cerradura no lee la llave digital.","due":727}'::jsonb),
+  ('tk:19', '{"id":19,"room":600,"issue":"TV / WiFi","oos":false,"state":"abierto","det":"Sin señal en la TV ni en el WiFi.","due":758}'::jsonb),
+  ('tk:20', '{"id":20,"room":623,"issue":"Luz / eléctrico","oos":false,"state":"resuelto","det":"Falla en el circuito de luz del baño.","due":789}'::jsonb),
+  ('tk:21', '{"id":21,"room":721,"issue":"Otro","oos":false,"state":"abierto","det":"Cortina del baño rota.","due":820}'::jsonb),
+  ('ar:1', '{"id":1,"n":"Nicolás Figueroa","first":"Nicolás","last":"Figueroa","noches":2,"adults":2,"hora":"14:15","type":"SXBL","room":null,"pre":null,"done":false,"conf":"90007919","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:2', '{"id":2,"n":"Henry Lozano","first":"Henry","last":"Lozano","noches":3,"adults":3,"hora":"14:30","type":"SXBL","room":null,"pre":null,"done":false,"conf":"90015838","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:3', '{"id":3,"n":"Jorge Quiroga","first":"Jorge","last":"Quiroga","noches":4,"adults":1,"hora":"14:45","type":"KXTY","room":null,"pre":null,"done":false,"conf":"90023757","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:4', '{"id":4,"n":"Ximena Valdez","first":"Ximena","last":"Valdez","noches":5,"adults":2,"hora":"15:00","type":"SXBL","room":null,"pre":null,"done":false,"conf":"90031676","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:5', '{"id":5,"n":"Felipe Fletcher","first":"Felipe","last":"Fletcher","noches":1,"adults":3,"hora":"15:15","type":"SXBL","room":null,"pre":null,"done":false,"conf":"90039595","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:6', '{"id":6,"n":"Teresa Espinoza","first":"Teresa","last":"Espinoza","noches":2,"adults":1,"hora":"15:30","type":"KXTY","room":null,"pre":null,"done":false,"conf":"90047514","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:7', '{"id":7,"n":"Bruno Jaramillo","first":"Bruno","last":"Jaramillo","noches":3,"adults":2,"hora":"15:45","type":"KXTY","room":null,"pre":null,"done":false,"conf":"90055433","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:8', '{"id":8,"n":"Olivia Paredes","first":"Olivia","last":"Paredes","noches":4,"adults":3,"hora":"16:00","type":"SXBL","room":null,"pre":null,"done":false,"conf":"90063352","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:9', '{"id":9,"n":"Chloe Urrutia","first":"Chloe","last":"Urrutia","noches":5,"adults":1,"hora":"16:15","type":"KXTY","room":null,"pre":null,"done":false,"conf":"90071271","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:10', '{"id":10,"n":"Karla Donovan","first":"Karla","last":"Donovan","noches":1,"adults":2,"hora":"16:30","type":"SXBL","room":null,"pre":null,"done":false,"conf":"90079190","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:11', '{"id":11,"n":"Yago Duarte","first":"Yago","last":"Duarte","noches":2,"adults":3,"hora":"16:45","type":"SXBL","room":null,"pre":null,"done":false,"conf":"90087109","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:12', '{"id":12,"n":"Gabriela Ibarra","first":"Gabriela","last":"Ibarra","noches":3,"adults":1,"hora":"17:00","type":"SXBL","room":null,"pre":null,"done":false,"conf":"90095028","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:13', '{"id":13,"n":"Ulises Ochoa","first":"Ulises","last":"Ochoa","noches":4,"adults":2,"hora":"17:15","type":"KXTD","room":null,"pre":null,"done":false,"conf":"90102947","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:14', '{"id":14,"n":"Camila Tovar","first":"Camila","last":"Tovar","noches":5,"adults":3,"hora":"17:30","type":"SXBL","room":null,"pre":null,"done":false,"conf":"90110866","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:15', '{"id":15,"n":"Pablo Caldwell","first":"Pablo","last":"Caldwell","noches":1,"adults":1,"hora":"17:45","type":"SXBL","room":null,"pre":null,"done":false,"conf":"90118785","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:16', '{"id":16,"n":"Ethan Cárdenas","first":"Ethan","last":"Cárdenas","noches":2,"adults":2,"hora":"18:00","type":"KXTY","room":null,"pre":null,"done":false,"conf":"90126704","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:17', '{"id":17,"n":"Leonardo Herrera","first":"Leonardo","last":"Herrera","noches":3,"adults":3,"hora":"18:15","type":"SXBL","room":null,"pre":null,"done":false,"conf":"90134623","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:18', '{"id":18,"n":"Zoe Navarro","first":"Zoe","last":"Navarro","noches":4,"adults":1,"hora":"18:30","type":"SXBL","room":null,"pre":null,"done":false,"conf":"90142542","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:19', '{"id":19,"n":"Héctor Salazar","first":"Héctor","last":"Salazar","noches":5,"adults":2,"hora":"18:45","type":"SXBL","room":null,"pre":null,"done":false,"conf":"90150461","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:20', '{"id":20,"n":"Valeria Brennan","first":"Valeria","last":"Brennan","noches":1,"adults":3,"hora":"19:00","type":"SXBL","room":null,"pre":null,"done":false,"conf":"90158380","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:21', '{"id":21,"n":"Diego Benítez","first":"Diego","last":"Benítez","noches":2,"adults":1,"hora":"19:15","type":"NDRQE","room":null,"pre":null,"done":false,"conf":"90166299","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:22', '{"id":22,"n":"Raquel Galindo","first":"Raquel","last":"Galindo","noches":3,"adults":2,"hora":"19:30","type":"SXBL","room":null,"pre":null,"done":false,"conf":"90174218","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:23', '{"id":23,"n":"Mia Medina","first":"Mia","last":"Medina","noches":4,"adults":3,"hora":"19:45","type":"KXTY","room":null,"pre":null,"done":false,"conf":"90182137","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:24', '{"id":24,"n":"Mariana Rosales","first":"Mariana","last":"Rosales","noches":5,"adults":1,"hora":"20:00","type":"KXTD","room":null,"pre":null,"done":false,"conf":"90190056","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:25', '{"id":25,"n":"Grace Zamora","first":"Grace","last":"Zamora","noches":1,"adults":2,"hora":"20:15","type":"SXBL","room":null,"pre":null,"done":false,"conf":"90197975","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:26', '{"id":26,"n":"Irene Alarcón","first":"Irene","last":"Alarcón","noches":2,"adults":3,"hora":"20:30","type":"KXTY","room":null,"pre":null,"done":false,"conf":"90205894","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:27', '{"id":27,"n":"Walter Figueroa","first":"Walter","last":"Figueroa","noches":3,"adults":1,"hora":"20:45","type":"SXBL","room":null,"pre":null,"done":false,"conf":"90213813","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:28', '{"id":28,"n":"Elena Lozano","first":"Elena","last":"Lozano","noches":4,"adults":2,"hora":"21:00","type":"SXBL","room":null,"pre":null,"done":false,"conf":"90221732","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:29', '{"id":29,"n":"Samuel Quiroga","first":"Samuel","last":"Quiroga","noches":5,"adults":3,"hora":"21:15","type":"SXBL","room":null,"pre":null,"done":false,"conf":"90229651","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:30', '{"id":30,"n":"Ana Valdez","first":"Ana","last":"Valdez","noches":1,"adults":1,"hora":"21:30","type":"NKRQD","room":null,"pre":null,"done":false,"conf":"90237570","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:31', '{"id":31,"n":"Nicolás Fletcher","first":"Nicolás","last":"Fletcher","noches":2,"adults":2,"hora":"21:45","type":"SXBL","room":null,"pre":null,"done":false,"conf":"90245489","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:32', '{"id":32,"n":"Henry Espinoza","first":"Henry","last":"Espinoza","noches":3,"adults":3,"hora":"14:00","type":"SXBL","room":null,"pre":null,"done":false,"conf":"90253408","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:33', '{"id":33,"n":"Jorge Jaramillo","first":"Jorge","last":"Jaramillo","noches":4,"adults":1,"hora":"14:15","type":"KXTD","room":null,"pre":null,"done":false,"conf":"90261327","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:34', '{"id":34,"n":"Ximena Paredes","first":"Ximena","last":"Paredes","noches":5,"adults":2,"hora":"14:30","type":"SXBL","room":null,"pre":null,"done":false,"conf":"90269246","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:35', '{"id":35,"n":"Felipe Urrutia","first":"Felipe","last":"Urrutia","noches":1,"adults":3,"hora":"14:45","type":"SXBL","room":null,"pre":null,"done":false,"conf":"90277165","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:36', '{"id":36,"n":"Teresa Donovan","first":"Teresa","last":"Donovan","noches":2,"adults":1,"hora":"15:00","type":"SXBL","room":null,"pre":null,"done":false,"conf":"90285084","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:37', '{"id":37,"n":"Bruno Duarte","first":"Bruno","last":"Duarte","noches":3,"adults":2,"hora":"15:15","type":"SXBL","room":null,"pre":null,"done":false,"conf":"90293003","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:38', '{"id":38,"n":"Olivia Ibarra","first":"Olivia","last":"Ibarra","noches":4,"adults":3,"hora":"15:30","type":"SXBL","room":null,"pre":null,"done":false,"conf":"90300922","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:39', '{"id":39,"n":"Chloe Ochoa","first":"Chloe","last":"Ochoa","noches":5,"adults":1,"hora":"15:45","type":"SXBL","room":null,"pre":null,"done":false,"conf":"90308841","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb),
+  ('ar:40', '{"id":40,"n":"Karla Tovar","first":"Karla","last":"Tovar","noches":1,"adults":2,"hora":"16:00","type":"SXBL","room":null,"pre":null,"done":false,"conf":"90316760","co":"","rate":"BAR","notes":"","msg":"","prepaid":0,"warned":false}'::jsonb)
+) as v(key, data);
 
 commit;
+
+select (select count(*) from public.rooms) habitaciones, (select count(*) from public.room_types) tipos,
+       (select count(*) from public.maintenance_tickets) tickets, (select count(*) from public.arrivals) llegadas;

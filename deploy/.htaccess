@@ -1,0 +1,19 @@
+# StayDesk · Apache (necesita mod_headers y mod_deflate)
+<IfModule mod_headers.c>
+  Header always set Content-Security-Policy "default-src 'none'; script-src 'sha256-kFrnSrsuz1sztfbtWNquUwztqgkOcNkkf5ZQke3uGIM=' 'sha256-VeNjQIIErwGFXPTEsE3+7zuR/xtBFjxlVC3X+hA51Og=' 'sha256-AXh6+h7NzuzcZaSeILpbEz4r8Bnhzi/LhhJzRVXdBu4=' 'sha256-/L84WQdVtrFl1TyyRkE1OkfznywM/vFJcXoCoy4o2xc='; style-src 'self' 'unsafe-inline'; style-src-elem 'sha256-xyxJHhG7LYcRt9x31p/pVtumeSQT+9FYzPOYZVSh9iM='; style-src-attr 'unsafe-inline'; img-src 'self' data: blob:; font-src data:; connect-src 'self' https://oztadhzdxeftzgpipgso.supabase.co https://jamailgolmlcyblzduqe.supabase.co; manifest-src 'self' blob:; worker-src 'self'; media-src data: blob:; base-uri 'none'; form-action 'none'; object-src 'none'; frame-ancestors 'none'; upgrade-insecure-requests"
+  Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "DENY"
+  Header always set Referrer-Policy "no-referrer"
+  Header always set Permissions-Policy "camera=(self), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()"
+  Header always set Cross-Origin-Opener-Policy "same-origin"
+  Header always set Cross-Origin-Resource-Policy "same-origin"
+  <FilesMatch "^(index\.html|sw\.js)$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+</IfModule>
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/css application/javascript application/json
+</IfModule>
+DirectoryIndex index.html
+Options -Indexes
