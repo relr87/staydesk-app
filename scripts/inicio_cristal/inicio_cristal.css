@@ -1,12 +1,16 @@
-/* Inicio de cristal (v26): tarjeta de cristal con luz en el borde, luz alrededor de cada campo,
-   botón «Entrar» atado que escapa mientras falta el dato. Solo cambia el aspecto: la lógica del ID y del PIN es la misma. */
+
+/* Inicio de cristal (v26): tarjeta de cristal con una luz que recorre todo su borde, luz alrededor de cada campo,
+   botón «Entrar» fijo que se enciende cuando el dato está completo, y un efecto al entrar a la app.
+   Solo cambia el aspecto: la lógica del ID y del PIN es la misma. */
 @property --lxa{syntax:'<angle>';inherits:false;initial-value:0deg}
 #login .lcard{--ink:#fff;--mut:rgba(255,255,255,.74);--line:rgba(255,255,255,.2);--lxg:#F5C04A;--lxo:#F7941D;position:relative;isolation:isolate;color:#fff;
   background:linear-gradient(165deg,rgba(255,255,255,.15),rgba(255,255,255,.05));box-shadow:0 40px 90px -30px rgba(0,0,0,.75),inset 0 1px 0 rgba(255,255,255,.22);
   -webkit-backdrop-filter:blur(22px) saturate(140%);backdrop-filter:blur(22px) saturate(140%)}
-#login .lcard::before{content:"";position:absolute;inset:-1.5px;border-radius:inherit;padding:1.5px;z-index:-1;pointer-events:none;
-  background:conic-gradient(from var(--lxa),transparent 0 70%,var(--lxg) 82%,#FFF3D1 85%,var(--lxo) 88%,transparent 92%),linear-gradient(rgba(255,255,255,.18),rgba(255,255,255,.18));
-  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;animation:lxspin 4.5s linear infinite}
+/* the border: two lights chasing each other round the whole card, with a soft glow outside */
+#login .lcard::before,#login .lcard::after{content:"";position:absolute;inset:-2px;border-radius:inherit;padding:2px;z-index:-1;pointer-events:none;
+  background:conic-gradient(from var(--lxa),transparent 0 8%,var(--lxg) 18%,#FFF3D1 21%,var(--lxo) 24%,transparent 34% 58%,#6FA8FF 68%,#E9F2FF 71%,var(--lxg) 74%,transparent 84%),linear-gradient(rgba(255,255,255,.14),rgba(255,255,255,.14));
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;animation:lxspin 5s linear infinite}
+#login .lcard::after{inset:-6px;padding:6px;filter:blur(10px);opacity:.7}
 @keyframes lxspin{to{--lxa:360deg}}
 #login .lcard .lp{color:#fff}
 #login .lcard .lerr{color:#FFB3A6}
@@ -29,17 +33,55 @@
 #login .lxck{position:absolute;right:13px;top:50%;translate:0 -50%;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;z-index:3;
   background:var(--lxg);color:#1B2440;font:900 13px/1 system-ui,sans-serif;scale:0;transition:scale .3s cubic-bezier(.34,1.56,.64,1);pointer-events:none}
 #login .lxf.ok .lxck{scale:1}
-/* the dock, the anchor, the line and the runaway button */
-#login .lxdock{position:relative;height:72px;border-radius:18px;margin-top:4px;background:rgba(2,8,20,.5);box-shadow:inset 0 2px 10px rgba(0,0,0,.55);overflow:hidden;flex:none}
-#login .lxdock svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
-#login .lxdock .lxan{fill:none;stroke:rgba(255,255,255,.4);stroke-width:2}
-#login .lxdock .lxte{fill:none;stroke:rgba(255,255,255,.4);stroke-width:2;stroke-linecap:round;transition:stroke .3s}
-#login .lxdock.ok .lxte{stroke:var(--lxg);filter:drop-shadow(0 0 6px var(--lxg))}
-#login .lcard .lxdock .lbtn{position:absolute;left:50%;top:50%;width:150px;height:46px;margin:-23px 0 0 -75px;padding:0;border-radius:999px;flex:none;
-  background:linear-gradient(180deg,#2A3756,#1A2440);color:rgba(255,255,255,.85);border:1px solid rgba(255,255,255,.18);box-shadow:0 10px 24px -10px rgba(0,0,0,.8);
-  transition:translate .35s cubic-bezier(.34,1.56,.64,1),rotate .35s,background .35s,color .35s,box-shadow .35s;touch-action:none}
-#login .lcard .lxdock.ok .lbtn{background:linear-gradient(180deg,#FFD27A,var(--lxo));color:#1B2440;border-color:transparent;box-shadow:0 0 0 6px rgba(245,192,74,.15),0 14px 34px -10px rgba(247,148,29,.9)}
-#login .lxhint{margin:2px 0 0;text-align:center;font-size:.82rem;color:var(--mut);min-height:1.2em;transition:color .3s}
-#login .lxhint.ok{color:var(--lxg)}
-html[data-motion="reduce"] #login .lcard::before,html[data-motion="reduce"] #login .lxf::before,html[data-fx="0"] #login .lcard::before,html[data-fx="0"] #login .lxf::before{animation:none}
-@media(prefers-reduced-motion:reduce){#login .lcard::before,#login .lxf::before{animation:none}}
+/* the button stays put: dim while the field is empty, gold once it is complete */
+#login .lcard form .lbtn{border-radius:14px;min-height:52px;background:rgba(255,255,255,.1);color:rgba(255,255,255,.85);border:1px solid rgba(255,255,255,.2);box-shadow:none;
+  transition:background .35s,color .35s,box-shadow .35s,transform .12s}
+#login .lcard form.lxok .lbtn{background:linear-gradient(180deg,#FFD27A,var(--lxo));color:#1B2440;border-color:transparent;box-shadow:0 0 0 5px rgba(245,192,74,.14),0 14px 34px -12px rgba(247,148,29,.9)}
+#login .lcard form .lbtn:active{transform:scale(.98)}
+
+/* the way into the app: a layer covers the sign-in screen, the app opens underneath, the layer plays its way out (2.2 s, a tap skips it) */
+.lxfx{position:fixed!important;inset:0!important;top:0!important;left:0!important;width:100vw!important;height:100vh!important;height:100dvh!important;max-height:none!important;display:block!important;margin:0!important;padding:0!important;z-index:2147483000;overflow:hidden;color:#fff;cursor:pointer;font-family:var(--fb,system-ui)}
+.lxfx .lxname{position:absolute;left:0;right:0;top:calc(50% + 112px);text-align:center;font:800 clamp(24px,3vw,36px)/1.2 var(--fh,system-ui);letter-spacing:-.01em}
+.lxfx .lxname small{display:block;font:600 15px var(--fb,system-ui);color:rgba(255,255,255,.78);margin-top:6px;letter-spacing:.02em}
+.lxfx .lxlogo{position:absolute;left:50%;top:50%;width:150px;height:150px;margin:-75px 0 0 -75px}
+.lxfx .lxlogo svg{width:100%;height:100%;display:block;border-radius:34px}
+.lxfx .lxlogo::before{content:"";position:absolute;inset:-18px;border-radius:50%;border:3px solid #F5C04A;box-shadow:0 0 34px rgba(245,192,74,.85),inset 0 0 16px rgba(245,192,74,.5)}
+.lxfx .lxlogo::after{content:"";position:absolute;inset:-140px;border-radius:50%;z-index:-1;background:radial-gradient(circle,rgba(250,200,80,.45),rgba(247,148,29,.1) 45%,transparent 70%)}
+.lxfx .lxskip{position:absolute;left:0;right:0;bottom:max(22px,env(safe-area-inset-bottom));text-align:center;font-size:13px;color:rgba(255,255,255,.6)}
+/* A · the logo comes to you: navy closes over the screen, the logo lands with its gold ring, then flies at the camera as the app opens in a circle */
+@property --r{syntax:'<percentage>';inherits:false;initial-value:0%}
+.lxfx.fa{background:radial-gradient(circle at 50% 50%,transparent var(--r),#0B2246 calc(var(--r) + .6%),#14396E 100%);animation:lxfaBg 2.2s cubic-bezier(.7,0,.3,1) forwards}
+.lxfx.fa .lxlogo{animation:lxfaLogo 2.2s cubic-bezier(.55,0,.35,1) forwards}
+.lxfx.fa .lxname,.lxfx.fa .lxskip{animation:lxfaName 2.2s ease forwards}
+@keyframes lxfaBg{0%{--r:0%;opacity:0}14%{opacity:1;--r:0%}62%{--r:0%}100%{--r:80%;opacity:1}}
+@keyframes lxfaLogo{0%,10%{scale:.4;opacity:0}28%{scale:1.08;opacity:1}36%,60%{scale:1;opacity:1;filter:blur(0)}100%{scale:10;opacity:0;filter:blur(14px)}}
+@keyframes lxfaName{0%,22%{opacity:0;translate:0 14px}34%,58%{opacity:1;translate:0 0}72%,100%{opacity:0}}
+/* B · hotel doors: two doors close over the screen, the gold seam and the bell light up, the doors slide open onto the app */
+.lxfx.fb .lxd{position:absolute;top:0;bottom:0;width:50%;overflow:hidden;background:linear-gradient(160deg,#0A1F3D,#17407A)}
+.lxfx.fb .lxd::before{content:"";position:absolute;inset:0;background:repeating-linear-gradient(90deg,rgba(255,255,255,.035) 0 1px,transparent 1px 64px)}
+.lxfx.fb .lxdl{left:0;box-shadow:inset -3px 0 0 #F5C04A;animation:lxfbL 2.2s cubic-bezier(.65,0,.3,1) forwards}
+.lxfx.fb .lxdr{right:0;box-shadow:inset 3px 0 0 #F5C04A;animation:lxfbR 2.2s cubic-bezier(.65,0,.3,1) forwards}
+.lxfx.fb .lxd .lxlogo{left:100%}.lxfx.fb .lxdr .lxlogo{left:0}
+.lxfx.fb .lxd .lxname{left:0;right:auto;width:200%}.lxfx.fb .lxdr .lxname{left:-100%}
+.lxfx.fb .lxseam{position:absolute;left:50%;top:0;bottom:0;width:4px;margin-left:-2px;background:linear-gradient(transparent,#FFE3A0 25%,#F5C04A 50%,#FFE3A0 75%,transparent);box-shadow:0 0 36px 10px rgba(245,192,74,.6);animation:lxfbSeam 2.2s ease forwards}
+.lxfx.fb .lxskip{animation:lxfbSkip 2.2s ease forwards}
+@keyframes lxfbL{0%{translate:-101% 0}24%,62%{translate:0}100%{translate:-102% 0}}
+@keyframes lxfbR{0%{translate:101% 0}24%,62%{translate:0}100%{translate:102% 0}}
+@keyframes lxfbSeam{0%,22%{opacity:0;scale:1 .1}32%,58%{opacity:1;scale:1 1}66%,100%{opacity:0}}
+@keyframes lxfbSkip{0%,24%{opacity:0}30%,58%{opacity:1}64%,100%{opacity:0}}
+/* C · glass: the screen frosts over, a band of light crosses, the glass clears and the app rises into place */
+.lxfx.fc{animation:lxfcGlass 2.2s ease forwards}
+.lxfx.fc::after{content:"";position:absolute;inset:-50%;background:linear-gradient(115deg,transparent 42%,rgba(255,243,209,.55) 50%,transparent 58%);animation:lxfcSweep 2.2s ease forwards}
+.lxfx.fc .lxlogo{animation:lxfcLogo 2.2s ease forwards}
+.lxfx.fc .lxname,.lxfx.fc .lxskip{animation:lxfcName 2.2s ease forwards}
+@keyframes lxfcGlass{0%{-webkit-backdrop-filter:blur(0);backdrop-filter:blur(0);background:rgba(10,31,61,0)}22%,58%{-webkit-backdrop-filter:blur(28px) saturate(150%);backdrop-filter:blur(28px) saturate(150%);background:rgba(10,31,61,.78)}100%{-webkit-backdrop-filter:blur(0);backdrop-filter:blur(0);background:rgba(10,31,61,0)}}
+@keyframes lxfcSweep{0%,20%{translate:-60% 0}62%,100%{translate:60% 0}}
+@keyframes lxfcLogo{0%,12%{opacity:0;scale:.85}30%,56%{opacity:1;scale:1}78%,100%{opacity:0;scale:1.1}}
+@keyframes lxfcName{0%,22%{opacity:0}34%,56%{opacity:1}72%,100%{opacity:0}}
+body.lxrise #app > *{animation:lxrise .8s cubic-bezier(.2,.8,.2,1) both}
+body.lxrise #app > *:nth-child(2){animation-delay:.07s}body.lxrise #app > *:nth-child(3){animation-delay:.14s}body.lxrise #app > *:nth-child(4){animation-delay:.21s}body.lxrise #app > *:nth-child(5){animation-delay:.28s}
+@keyframes lxrise{from{opacity:0;translate:0 26px}}
+
+html[data-motion="reduce"] #login .lcard::before,html[data-motion="reduce"] #login .lcard::after,html[data-motion="reduce"] #login .lxf::before,
+html[data-fx="0"] #login .lcard::before,html[data-fx="0"] #login .lcard::after,html[data-fx="0"] #login .lxf::before{animation:none}
+@media(prefers-reduced-motion:reduce){#login .lcard::before,#login .lcard::after,#login .lxf::before{animation:none}}
