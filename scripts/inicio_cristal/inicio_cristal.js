@@ -15,7 +15,7 @@
   new MutationObserver(run).observe(who,{childList:true,subtree:true});run();
 
   /* the way into the app, "Polvo de oro" (in place of the old intro): the sign-in screen breaks into gold dust that flows into the logo,
-     the logo pulses, the desk bell rings, the greeting shows, and the app appears. About 2.4 s; a tap, Enter or Esc skips it.
+     the logo pulses, the greeting shows, and the app appears. About 2.4 s; a tap, Enter or Esc skips it.
      The app's own switch for effects and "reduce motion" are respected: with either of them the app opens straight away, as before. */
   function fxOn(){const d=document.documentElement;return d.dataset.fx!=='0'&&d.dataset.motion!=='reduce'&&!matchMedia('(prefers-reduced-motion: reduce)').matches}
   function esc2(t){return String(t==null?'':t).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]))}
@@ -55,7 +55,13 @@
       const end=()=>{if(ended)return;ended=true;cancelAnimationFrame(raf);open();T.forEach(clearTimeout);o.remove();document.removeEventListener('keydown',key,true);busy=false};
       const key=e=>{if(e.key==='Enter'||e.key===' '||e.key==='Escape'){e.preventDefault();e.stopPropagation();end()}};
       o.addEventListener('click',end);document.addEventListener('keydown',key,true);
-      T.push(setTimeout(()=>{o.classList.add('lit');try{if(typeof lxSnd==='function')lxSnd()}catch(_){}},1250));   /* the logo forms and the app's own desk bell rings */
+      T.push(setTimeout(()=>o.classList.add('lit'),1250));   /* the logo forms where the dust meets */
       T.push(setTimeout(open,1650),setTimeout(()=>o.classList.add('out'),1750),setTimeout(end,2450))};
   }
+  /* sounds at sign-in: only the desk-bell "ding" of the key card when the PIN is accepted. For 3 s from that moment the alert tones
+     (pending notices, guest chat) stay quiet; the notices still show, and later alerts sound as usual. */
+  let quietUntil=0;
+  if(typeof playSnd==='function'){const ps=playSnd;playSnd=function(k,force){if(Date.now()<quietUntil&&!force)return false;return ps.apply(this,arguments)}}
+  if(typeof buzz==='function'){const bz=buzz;buzz=function(){if(Date.now()<quietUntil)return;return bz.apply(this,arguments)}}
+  if(typeof showBrief==='function'){const sb=showBrief;showBrief=function(){if(login&&!login.hidden)quietUntil=Date.now()+3000;return sb.apply(this,arguments)}}
 })();
